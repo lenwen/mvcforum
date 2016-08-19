@@ -5,6 +5,7 @@
     <script type="text/javascript">        
         tinymce.init({
             selector: "textarea.rte",
+            browser_spellcheck: true,
             plugins: [
                 "autosave link image lists hr anchor forumimageinsert",
                 "wordcount visualblocks visualchars code fullscreen media nonbreaking"
@@ -15,7 +16,8 @@
             menubar: false,
             toolbar_items_size: 'small',
             content_css: app_base + "content/tinymce.css",
-            height: 175
+            height: 175,
+            nonbreaking_force_tab: true
             //setup: function(editor) {
             //    editor.on( 'keydown', function(editor, evt) {
             //        if (evt.keyCode == 9) {

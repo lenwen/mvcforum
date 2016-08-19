@@ -9,6 +9,8 @@ using MVCForum.Website.Application;
 
 namespace MVCForum.Website.ViewModels
 {
+    using Domain.Constants;
+
     public class ActiveMembersViewModel
     {
         public IList<MembershipUser> ActiveMembers { get; set; }
@@ -74,7 +76,7 @@ namespace MVCForum.Website.ViewModels
 
         [ForumMvcResourceDisplayName("Members.Label.Signature")]
         [StringLength(1000)]
-        [AllowHtml]
+        [UIHint(AppConstants.EditorType), AllowHtml]
         public string Signature { get; set; }
 
         [ForumMvcResourceDisplayName("Members.Label.Age")]
@@ -105,8 +107,12 @@ namespace MVCForum.Website.ViewModels
 
         public string Avatar { get; set; }
         public bool DisableFileUploads { get; set; }
+
         [ForumMvcResourceDisplayName("Members.Label.DisableEmailNotifications")]
         public bool DisableEmailNotifications { get; set; }
+
+
+        public int AmountOfPoints { get; set; }
 
     }
 
@@ -145,6 +151,7 @@ namespace MVCForum.Website.ViewModels
         public int NewPrivateMessageCount { get; set; }
         public bool CanViewPrivateMessages { get; set; }
         public bool IsDropDown { get; set; }
+        public int ModerateCount { get; set; }
     }
 
     public class AdminMemberProfileToolsViewModel

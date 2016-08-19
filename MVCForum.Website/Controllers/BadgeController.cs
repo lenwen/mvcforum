@@ -1,12 +1,12 @@
-﻿using System;
-using System.Web.Mvc;
-using MVCForum.Domain.DomainModel;
-using MVCForum.Domain.Interfaces.Services;
-using MVCForum.Domain.Interfaces.UnitOfWork;
-using MVCForum.Website.ViewModels;
-
-namespace MVCForum.Website.Controllers
+﻿namespace MVCForum.Website.Controllers
 {
+    using System;
+    using System.Web.Mvc;
+    using Domain.DomainModel;
+    using Domain.Interfaces.Services;
+    using Domain.Interfaces.UnitOfWork;
+    using ViewModels;
+
     public partial class BadgeController : BaseController
     {
         private readonly IBadgeService _badgeService;
@@ -25,14 +25,15 @@ namespace MVCForum.Website.Controllers
         /// <param name="roleService"> </param>
         /// <param name="settingsService"> </param>
         /// <param name="favouriteService"></param>
+        /// <param name="cacheService"></param>
         public BadgeController(ILoggingService loggingService,
             IUnitOfWorkManager unitOfWorkManager,
             IBadgeService badgeService,
             IPostService postService,
             IMembershipService membershipService,
             ILocalizationService localizationService, IRoleService roleService,
-            ISettingsService settingsService, IFavouriteService favouriteService)
-            : base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService)
+            ISettingsService settingsService, IFavouriteService favouriteService, ICacheService cacheService)
+            : base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService, cacheService)
         {
             _badgeService = badgeService;
             _postService = postService;
@@ -242,6 +243,14 @@ namespace MVCForum.Website.Controllers
             using (UnitOfWorkManager.NewUnitOfWork())
             {
                 var allBadges = _badgeService.GetallBadges();
+
+                // Localise the badge names
+                foreach (var item in allBadges)
+                {
+                    var partialKey = string.Concat("Badge.", item.Name);
+                    item.DisplayName = LocalizationService.GetResourceString(string.Concat(partialKey, ".Name"));
+                    item.Description = LocalizationService.GetResourceString(string.Concat(partialKey, ".Desc"));
+                }
 
                 var badgesListModel = new AllBadgesViewModel
                 {

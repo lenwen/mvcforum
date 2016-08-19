@@ -1,23 +1,20 @@
-﻿using System;
-using System.Net;
-using System.Web.Mvc;
-using System.Web.Security;
-using MVCForum.Domain.Constants;
-using MVCForum.Domain.DomainModel.Enums;
-using MVCForum.Domain.Interfaces.Services;
-using MVCForum.Domain.Interfaces.UnitOfWork;
-using MVCForum.Utilities;
-using MVCForum.Website.Application;
-using MVCForum.Website.Areas.Admin.ViewModels;
-using MVCForum.Website.ViewModels;
-using Skybrud.Social.Microsoft;
-using Skybrud.Social.Microsoft.OAuth;
-using Skybrud.Social.Microsoft.Responses.Authentication;
-using Skybrud.Social.Microsoft.Scopes;
-using Skybrud.Social.Microsoft.WindowsLive.Scopes;
-
-namespace MVCForum.Website.Controllers.OAuthControllers
+﻿namespace MVCForum.Website.Controllers.OAuthControllers
 {
+    using System;
+    using System.Web.Mvc;
+    using System.Web.Security;
+    using Domain.Constants;
+    using Domain.DomainModel.Enums;
+    using Domain.Interfaces.Services;
+    using Domain.Interfaces.UnitOfWork;
+    using Utilities;
+    using Areas.Admin.ViewModels;
+    using ViewModels;
+    using Skybrud.Social.Microsoft;
+    using Skybrud.Social.Microsoft.OAuth;
+    using Skybrud.Social.Microsoft.Responses.Authentication;
+    using Skybrud.Social.Microsoft.WindowsLive.Scopes;
+
     public class MicrosoftOAuthController : BaseController
     {
 
@@ -25,38 +22,20 @@ namespace MVCForum.Website.Controllers.OAuthControllers
         // List of existing app - https://account.live.com/developers/applications/index
 
         public MicrosoftOAuthController(ILoggingService loggingService, IUnitOfWorkManager unitOfWorkManager, IMembershipService membershipService,
-            ILocalizationService localizationService, IRoleService roleService, ISettingsService settingsService) :
-            base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService)
+            ILocalizationService localizationService, IRoleService roleService, ISettingsService settingsService, ICacheService cacheService) :
+            base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService, cacheService)
         {
         }
 
-        public string ReturnUrl
-        {
-            get
-            {
-                return string.Concat(SettingsService.GetSettings().ForumUrl.TrimEnd('/'), Url.Action("MicrosoftLogin"));
-            }
-        }
+        public string ReturnUrl => string.Concat(SettingsService.GetSettings().ForumUrl.TrimEnd('/'), Url.Action("MicrosoftLogin"));
 
-        public string AuthCode
-        {
-            get { return Request.QueryString["code"]; }
-        }
+        public string AuthCode => Request.QueryString["code"];
 
-        public string AuthState
-        {
-            get { return Request.QueryString["state"]; }
-        }
+        public string AuthState => Request.QueryString["state"];
 
-        public string AuthError
-        {
-            get { return Request.QueryString["error"]; }
-        }
+        public string AuthError => Request.QueryString["error"];
 
-        public string AuthErrorDescription
-        {
-            get { return Request.QueryString["error_description"]; }
-        }
+        public string AuthErrorDescription => Request.QueryString["error_description"];
 
         public ActionResult MicrosoftLogin()
         {
@@ -76,8 +55,8 @@ namespace MVCForum.Website.Controllers.OAuthControllers
 
 
             // Get the prevalue options
-            if (string.IsNullOrEmpty(SiteConstants.MicrosoftAppId) ||
-                string.IsNullOrEmpty(SiteConstants.MicrosoftAppSecret))
+            if (string.IsNullOrEmpty(SiteConstants.Instance.MicrosoftAppId) ||
+                string.IsNullOrEmpty(SiteConstants.Instance.MicrosoftAppSecret))
             {
                 resultMessage.Message = "You need to add the Microsoft app credentials to the web.config";
                 resultMessage.MessageType = GenericMessages.danger;
@@ -87,8 +66,8 @@ namespace MVCForum.Website.Controllers.OAuthControllers
 
                 var client = new MicrosoftOAuthClient
                 {
-                    ClientId = SiteConstants.MicrosoftAppId,
-                    ClientSecret = SiteConstants.MicrosoftAppSecret,
+                    ClientId = SiteConstants.Instance.MicrosoftAppId,
+                    ClientSecret = SiteConstants.Instance.MicrosoftAppSecret,
                     RedirectUri = ReturnUrl
                 };
 
@@ -134,7 +113,7 @@ namespace MVCForum.Website.Controllers.OAuthControllers
                 catch (Exception ex)
                 {
                     accessTokenResponse = null;
-                    resultMessage.Message = string.Format("Unable to acquire access token<br/>{0}", ex.Message);
+                    resultMessage.Message = $"Unable to acquire access token<br/>{ex.Message}";
                     resultMessage.MessageType = GenericMessages.danger;
                 }
 
@@ -160,7 +139,7 @@ namespace MVCForum.Website.Controllers.OAuthControllers
                         // Get a reference to the response body
                         var user = response.Body;
 
-                        var getEmail = user.Emails != null && !string.IsNullOrWhiteSpace(user.Emails.Preferred);
+                        var getEmail = !string.IsNullOrWhiteSpace(user.Emails?.Preferred);
                         if (!getEmail)
                         {
                             resultMessage.Message = LocalizationService.GetResourceString("Members.UnableToGetEmailAddress");
@@ -199,7 +178,7 @@ namespace MVCForum.Website.Controllers.OAuthControllers
                                     Password = StringUtils.RandomString(8),
                                     UserName = user.Name,
                                     UserAccessToken = accessTokenResponse.Body.AccessToken,
-                                    SocialProfileImageUrl = string.Format("https://apis.live.net/v5.0/{0}/picture", user.Id)
+                                    SocialProfileImageUrl = $"https://apis.live.net/v5.0/{user.Id}/picture"
                                 };
 
                                 //var uri = string.Concat("https://apis.live.net/v5.0/me?access_token=",viewModel.UserAccessToken);
@@ -232,7 +211,7 @@ namespace MVCForum.Website.Controllers.OAuthControllers
                 }
                 catch (Exception ex)
                 {
-                    resultMessage.Message = string.Format("Unable to get user information<br/>{0}", ex.Message);
+                    resultMessage.Message = $"Unable to get user information<br/>{ex.Message}";
                     resultMessage.MessageType = GenericMessages.danger;
                     LoggingService.Error(ex);
                 }

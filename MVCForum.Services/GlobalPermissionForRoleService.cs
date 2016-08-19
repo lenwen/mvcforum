@@ -1,37 +1,41 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using MVCForum.Domain.DomainModel;
-using MVCForum.Domain.Interfaces.Repositories;
-using MVCForum.Domain.Interfaces.Services;
-
-namespace MVCForum.Services
+﻿namespace MVCForum.Services
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Data.Entity;
+    using Domain.DomainModel;
+    using Domain.Interfaces;
+    using Domain.Interfaces.Services;
+    using Data.Context;
+    using Domain.Constants;
+
     public partial class GlobalPermissionForRoleService : IGlobalPermissionForRoleService
     {
-        private readonly IGlobalPermissionForRoleRepository _globalPermissionForRoleRepository;
+        private readonly MVCForumContext _context;
+        private readonly ICacheService _cacheService;
 
-        public GlobalPermissionForRoleService(IGlobalPermissionForRoleRepository globalPermissionForRoleRepository)
+        public GlobalPermissionForRoleService(IMVCForumContext context, ICacheService cacheService)
         {
-            _globalPermissionForRoleRepository = globalPermissionForRoleRepository;
+            _cacheService = cacheService;
+            _context = context as MVCForumContext;
         }
 
-
-        public void Add(GlobalPermissionForRole permissionForRole)
+        public GlobalPermissionForRole Add(GlobalPermissionForRole permissionForRole)
         {
-            _globalPermissionForRoleRepository.Add(permissionForRole);
+            return _context.GlobalPermissionForRole.Add(permissionForRole);
         }
 
         public void Delete(GlobalPermissionForRole permissionForRole)
         {
-            _globalPermissionForRoleRepository.Delete(permissionForRole);
+            _context.GlobalPermissionForRole.Remove(permissionForRole);
         }
 
         public GlobalPermissionForRole CheckExists(GlobalPermissionForRole permissionForRole)
         {
             if (permissionForRole.Permission != null && permissionForRole.MembershipRole != null)
             {
-                return _globalPermissionForRoleRepository.Get(permissionForRole.Permission.Id, permissionForRole.MembershipRole.Id);
+                return Get(permissionForRole.Permission.Id, permissionForRole.MembershipRole.Id);
             }
 
             return null;
@@ -39,24 +43,38 @@ namespace MVCForum.Services
 
         public Dictionary<Permission, GlobalPermissionForRole> GetAll(MembershipRole role)
         {
-            var catRowList = _globalPermissionForRoleRepository.GetAll(role);
-            return catRowList.ToDictionary(catRow => catRow.Permission);
+            var cacheKey = string.Concat(CacheKeys.GlobalPermissionForRole.StartsWith, "GetAll-", role.Id);
+            return _cacheService.CachePerRequest(cacheKey, () =>
+            {
+                var catRowList = _context.GlobalPermissionForRole.Include(x => x.MembershipRole).Where(x => x.MembershipRole.Id == role.Id).ToList();
+                return catRowList.ToDictionary(catRow => catRow.Permission);
+            });
         }
 
         public Dictionary<Permission, GlobalPermissionForRole> GetAll()
         {
-            var catRowList = _globalPermissionForRoleRepository.GetAll();
-            return catRowList.ToDictionary(catRow => catRow.Permission);
+            var cacheKey = string.Concat(CacheKeys.GlobalPermissionForRole.StartsWith, "GetAll");
+            return _cacheService.CachePerRequest(cacheKey, () =>
+            {
+                var catRowList = _context.GlobalPermissionForRole.Include(x => x.MembershipRole).ToList();
+                return catRowList.ToDictionary(catRow => catRow.Permission);
+            });
         }
 
         public GlobalPermissionForRole Get(Guid permId, Guid roleId)
         {
-            return _globalPermissionForRoleRepository.Get(permId, roleId);
+            var cacheKey = string.Concat(CacheKeys.GlobalPermissionForRole.StartsWith, "Get-", permId, "-", roleId);
+            return _cacheService.CachePerRequest(cacheKey, () => _context.GlobalPermissionForRole
+                                                                            .Include(x => x.MembershipRole)
+                                                                            .FirstOrDefault(x => x.Permission.Id == permId && x.MembershipRole.Id == roleId));
         }
 
         public GlobalPermissionForRole Get(Guid permId)
         {
-            return _globalPermissionForRoleRepository.Get(permId);
+            var cacheKey = string.Concat(CacheKeys.GlobalPermissionForRole.StartsWith, "Get-", permId);
+            return _cacheService.CachePerRequest(cacheKey, () => _context.GlobalPermissionForRole
+                                                                             .Include(x => x.MembershipRole)
+                                                                             .FirstOrDefault(x => x.Id == permId));
         }
 
         public void UpdateOrCreateNew(GlobalPermissionForRole globalPermissionForRole)

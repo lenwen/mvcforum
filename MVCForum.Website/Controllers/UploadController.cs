@@ -1,19 +1,18 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Web.Hosting;
-using System.Web.Mvc;
-using MVCForum.Domain.Constants;
-using MVCForum.Domain.DomainModel;
-using MVCForum.Domain.Interfaces.Services;
-using MVCForum.Domain.Interfaces.UnitOfWork;
-using MVCForum.Utilities;
-using MVCForum.Website.Application;
-using MVCForum.Website.Areas.Admin.ViewModels;
-using MVCForum.Website.ViewModels;
-
-namespace MVCForum.Website.Controllers
+﻿namespace MVCForum.Website.Controllers
 {
+    using System;
+    using System.IO;
+    using System.Linq;
+    using System.Web.Hosting;
+    using System.Web.Mvc;
+    using Domain.Constants;
+    using Domain.DomainModel;
+    using Domain.Interfaces.Services;
+    using Domain.Interfaces.UnitOfWork;
+    using Application;
+    using Areas.Admin.ViewModels;
+    using ViewModels;
+
     [Authorize]
     public partial class UploadController : BaseController
     {
@@ -22,8 +21,8 @@ namespace MVCForum.Website.Controllers
 
         public UploadController(ILoggingService loggingService, IUnitOfWorkManager unitOfWorkManager,
             IMembershipService membershipService, ILocalizationService localizationService, IRoleService roleService, ISettingsService settingsService,
-            IPostService postService, IUploadedFileService uploadedFileService)
-            : base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService)
+            IPostService postService, IUploadedFileService uploadedFileService, ICacheService cacheService)
+            : base(loggingService, unitOfWorkManager, membershipService, localizationService, roleService, settingsService, cacheService)
         {
             _postService = postService;
             _uploadedFileService = uploadedFileService;
@@ -55,7 +54,7 @@ namespace MVCForum.Website.Controllers
                             // Get the permissions for this category, and check they are allowed to update and 
                             // not trying to be a sneaky mofo
                             var permissions = RoleService.GetPermissions(category, UsersRole);
-                            if (permissions[AppConstants.PermissionAttachFiles].IsTicked == false || LoggedOnReadOnlyUser.DisableFileUploads == true)
+                            if (permissions[SiteConstants.Instance.PermissionAttachFiles].IsTicked == false || LoggedOnReadOnlyUser.DisableFileUploads == true)
                             {
                                 TempData[AppConstants.MessageViewBagName] = new GenericMessageViewModel
                                 {
@@ -68,7 +67,7 @@ namespace MVCForum.Website.Controllers
 
                             // woot! User has permission and all seems ok
                             // Before we save anything, check the user already has an upload folder and if not create one
-                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.UploadFolderPath, LoggedOnReadOnlyUser.Id));
+                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.Instance.UploadFolderPath, LoggedOnReadOnlyUser.Id));
                             if (!Directory.Exists(uploadFolderPath))
                             {
                                 Directory.CreateDirectory(uploadFolderPath);

@@ -1,31 +1,32 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
-using MVCForum.Domain.Constants;
-using MVCForum.Domain.DomainModel;
-using MVCForum.Domain.Exceptions;
-using MVCForum.Domain.Interfaces.Repositories;
-using MVCForum.Domain.Interfaces.Services;
-using MVCForum.Utilities;
-
-namespace MVCForum.Services
+﻿namespace MVCForum.Services
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Data.Entity;
+    using Domain.Constants;
+    using Domain.DomainModel;
+    using Domain.Exceptions;
+    using Domain.Interfaces;
+    using Domain.Interfaces.Services;
+    using Data.Context;
+    using Utilities;
+
     public partial class RoleService : IRoleService
     {
-        private readonly IRoleRepository _roleRepository;
-        private readonly ICategoryPermissionForRoleRepository _categoryPermissionForRoleRepository;
-        private readonly IGlobalPermissionForRoleRepository _globalPermissionForRoleRepository;
-        private readonly IPermissionRepository _permissionRepository;
+        private readonly ICategoryPermissionForRoleService _categoryPermissionForRoleService;
+        private readonly IGlobalPermissionForRoleService _globalPermissionForRoleService;
+        private readonly IPermissionService _permissionService;
+        private readonly MVCForumContext _context;
+        private readonly ICacheService _cacheService;
 
-        private PermissionSet _permissions;
-
-        public RoleService(IRoleRepository roleRepository, ICategoryPermissionForRoleRepository categoryPermissionForRoleRepository, IPermissionRepository permissionRepository, IGlobalPermissionForRoleRepository globalPermissionForRoleRepository)
+        public RoleService(IMVCForumContext context, ICategoryPermissionForRoleService categoryPermissionForRoleService, IPermissionService permissionService, IGlobalPermissionForRoleService globalPermissionForRoleService, ICacheService cacheService)
         {
-            _roleRepository = roleRepository;
-            _categoryPermissionForRoleRepository = categoryPermissionForRoleRepository;
-            _permissionRepository = permissionRepository;
-            _globalPermissionForRoleRepository = globalPermissionForRoleRepository;
+            _categoryPermissionForRoleService = categoryPermissionForRoleService;
+            _permissionService = permissionService;
+            _globalPermissionForRoleService = globalPermissionForRoleService;
+            _cacheService = cacheService;
+            _context = context as MVCForumContext;
         }
 
         /// <summary>
@@ -34,7 +35,10 @@ namespace MVCForum.Services
         /// <returns></returns>
         public IList<MembershipRole> AllRoles()
         {
-            return _roleRepository.AllRoles();
+            var cacheKey = string.Concat(CacheKeys.Role.StartsWith, "AllRoles");
+            return _cacheService.CachePerRequest(cacheKey, () => _context.MembershipRole
+                                                                    .OrderByDescending(x => x.RoleName)
+                                                                    .ToList());
         }
 
         /// <summary>
@@ -45,7 +49,20 @@ namespace MVCForum.Services
         /// <returns></returns>
         public MembershipRole GetRole(string rolename, bool removeTracking = false)
         {
-            return _roleRepository.GetRole(rolename, removeTracking);
+            var cacheKey = string.Concat(CacheKeys.Role.StartsWith, "GetRole-", rolename, "-", removeTracking);
+            return _cacheService.CachePerRequest(cacheKey, () =>
+            {
+                if (removeTracking)
+                {
+                    return _context.MembershipRole
+                        .Include(x => x.CategoryPermissionForRoles.Select(p => p.Permission))
+                        .Include(x => x.CategoryPermissionForRoles.Select(p => p.Category))
+                        .Include(x => x.GlobalPermissionForRole.Select(p => p.Permission))
+                        .AsNoTracking()
+                        .FirstOrDefault(y => y.RoleName.Contains(rolename));
+                }
+                return _context.MembershipRole.FirstOrDefault(y => y.RoleName.Contains(rolename));
+            });
         }
 
         /// <summary>
@@ -55,8 +72,8 @@ namespace MVCForum.Services
         /// <returns></returns>
         public MembershipRole GetRole(Guid id)
         {
-            return _roleRepository.Get(id);
-
+            var cacheKey = string.Concat(CacheKeys.Role.StartsWith, "GetRole-", id);
+            return _cacheService.CachePerRequest(cacheKey, () => _context.MembershipRole.FirstOrDefault(x => x.Id == id));
         }
 
         /// <summary>
@@ -66,18 +83,17 @@ namespace MVCForum.Services
         /// <returns></returns>
         public IList<MembershipUser> GetUsersForRole(string roleName)
         {
-            return _roleRepository.GetRole(roleName, false).Users;
-
+            return GetRole(roleName).Users;
         }
-
         /// <summary>
         /// Create a new role
         /// </summary>
         /// <param name="role"></param>
-        public void CreateRole(MembershipRole role)
+        public MembershipRole CreateRole(MembershipRole role)
         {
             role.RoleName = StringUtils.SafePlainText(role.RoleName);
-            _roleRepository.Add(role);
+            var membershipRole = GetRole(role.RoleName);
+            return membershipRole ?? _context.MembershipRole.Add(role);
         }
 
         /// <summary>
@@ -92,14 +108,14 @@ namespace MVCForum.Services
             if (okToDelete)
             {
                 // Get any categorypermissionforoles and delete these first
-                var rolesToDelete = _categoryPermissionForRoleRepository.GetByRole(role.Id);
+                var rolesToDelete = _categoryPermissionForRoleService.GetByRole(role.Id);
 
                 foreach (var categoryPermissionForRole in rolesToDelete)
                 {
-                    _categoryPermissionForRoleRepository.Delete(categoryPermissionForRole);
+                    _categoryPermissionForRoleService.Delete(categoryPermissionForRole);
                 }
 
-                _roleRepository.Delete(role);
+                _context.MembershipRole.Remove(role);
             }
             else
             {
@@ -107,16 +123,6 @@ namespace MVCForum.Services
                 inUseBy.AddRange(role.Users);
                 throw new InUseUnableToDeleteException(inUseBy);
             }
-        }
-
-        /// <summary>
-        /// Save a role
-        /// </summary>
-        /// <param name="role"></param>
-        public void Save(MembershipRole role)
-        {
-            role.RoleName = StringUtils.SafePlainText(role.RoleName);
-            _roleRepository.Update(role);
         }
 
 
@@ -128,7 +134,7 @@ namespace MVCForum.Services
         private PermissionSet GetAdminPermissions(Category category, MembershipRole role)
         {
             // Get all permissions
-            var permissionList = _permissionRepository.GetAll().ToList();
+            var permissionList = _permissionService.GetAll().ToList();
 
             // Make a new entry in the results against each permission. All true (this is admin) except "Deny Access" 
             // and "Read Only" which should be false
@@ -143,7 +149,7 @@ namespace MVCForum.Services
                     categoryPermissions.Add(new CategoryPermissionForRole
                     {
                         Category = category,
-                        IsTicked = (permission.Name != AppConstants.PermissionDenyAccess && permission.Name != AppConstants.PermissionReadOnly),
+                        IsTicked = (permission.Name != SiteConstants.Instance.PermissionDenyAccess && permission.Name != SiteConstants.Instance.PermissionReadOnly),
                         MembershipRole = role,
                         Permission = permission
                     });
@@ -155,11 +161,11 @@ namespace MVCForum.Services
             var globalPermissions = permissionList
                                         .Where(x => x.IsGlobal)
                                         .Select(permission => new GlobalPermissionForRole
-                                                        {
-                                                            IsTicked = true,
-                                                            MembershipRole = role,
-                                                            Permission = permission
-                                                        });
+                                        {
+                                            IsTicked = true,
+                                            MembershipRole = role,
+                                            Permission = permission
+                                        });
 
             // Create the permission set
             return new PermissionSet(categoryPermissions, globalPermissions);
@@ -173,7 +179,7 @@ namespace MVCForum.Services
         private PermissionSet GetGuestPermissions(Category category, MembershipRole role)
         {
             // Get all the permissions 
-            var permissionList = _permissionRepository.GetAll().ToList();
+            var permissionList = _permissionService.GetAll().ToList();
 
             // Make a CategoryPermissionForRole for each permission that exists,
             // but only set the read-only permission to true for this role / category. All others false
@@ -188,7 +194,7 @@ namespace MVCForum.Services
                     categoryPermissions.Add(new CategoryPermissionForRole
                     {
                         Category = category,
-                        IsTicked = permission.Name == AppConstants.PermissionReadOnly,
+                        IsTicked = permission.Name == SiteConstants.Instance.PermissionReadOnly,
                         MembershipRole = role,
                         Permission = permission
                     });
@@ -197,11 +203,11 @@ namespace MVCForum.Services
                 // Deny Access may have been set (or left null) for guest for the category, so need to read for it
                 var denyAccessPermission = role.CategoryPermissionForRoles
                                    .FirstOrDefault(x => x.Category.Id == category.Id &&
-                                                        x.Permission.Name == AppConstants.PermissionDenyAccess &&
+                                                        x.Permission.Name == SiteConstants.Instance.PermissionDenyAccess &&
                                                         x.MembershipRole.Id == role.Id);
 
                 // Set the Deny Access value in the results. If it's null for this role/category, record it as false in the results
-                var categoryPermissionForRole = categoryPermissions.FirstOrDefault(x => x.Permission.Name == AppConstants.PermissionDenyAccess);
+                var categoryPermissionForRole = categoryPermissions.FirstOrDefault(x => x.Permission.Name == SiteConstants.Instance.PermissionDenyAccess);
                 if (categoryPermissionForRole != null)
                 {
                     categoryPermissionForRole.IsTicked = denyAccessPermission != null && denyAccessPermission.IsTicked;
@@ -232,21 +238,21 @@ namespace MVCForum.Services
         private PermissionSet GetOtherPermissions(Category category, MembershipRole role)
         {
             // Get all permissions
-            var permissionList = _permissionRepository.GetAll().ToList();
+            var permissionList = _permissionService.GetAll().ToList();
 
             var categoryPermissions = new List<CategoryPermissionForRole>();
             if (category != null)
             {
                 // Get the known permissions for this role and category
-                var categoryRow = _categoryPermissionForRoleRepository.GetCategoryRow(role, category);
-                var categoryRowPermissions = categoryRow.ToDictionary(catRow => catRow.Permission.Id);
+                var categoryRow = _categoryPermissionForRoleService.GetCategoryRow(role, category);
+                var categoryRowPermissions = categoryRow.ToDictionary(catRow => catRow.Key.Id);
 
                 // Load up the results with the permisions for this role / cartegory. A null entry for a permissions results in a new
                 // record with a false value
                 foreach (var permission in permissionList.Where(x => !x.IsGlobal))
                 {
                     categoryPermissions.Add(categoryRowPermissions.ContainsKey(permission.Id)
-                                        ? categoryRowPermissions[permission.Id]
+                                        ? categoryRowPermissions[permission.Id].Value
                                         : new CategoryPermissionForRole { Category = category, MembershipRole = role, IsTicked = false, Permission = permission });
                 }
             }
@@ -255,15 +261,15 @@ namespace MVCForum.Services
             var globalPermissions = new List<GlobalPermissionForRole>();
 
             // Get the known global permissions for this role
-            var globalRow = _globalPermissionForRoleRepository.GetAll(role);
-            var globalRowPermissions = globalRow.ToDictionary(row => row.Permission.Id);
+            var globalRow = _globalPermissionForRoleService.GetAll(role);
+            var globalRowPermissions = globalRow.ToDictionary(row => row.Key.Id);
 
             // Load up the results with the permisions for this role. A null entry for a permissions results in a new
             // record with a false value
             foreach (var permission in permissionList.Where(x => x.IsGlobal))
             {
                 globalPermissions.Add(globalRowPermissions.ContainsKey(permission.Id)
-                                    ? globalRowPermissions[permission.Id]
+                                    ? globalRowPermissions[permission.Id].Value
                                     : new GlobalPermissionForRole { MembershipRole = role, IsTicked = false, Permission = permission });
             }
 
@@ -288,27 +294,27 @@ namespace MVCForum.Services
                 categoryId = category.Id;
             }
 
-            var objectContextKey = string.Concat(HttpContext.Current.GetHashCode().ToString("x"), "-", categoryId, "-", role.Id);
-            if (!HttpContext.Current.Items.Contains(objectContextKey))
+            var cacheKey = string.Concat(CacheKeys.Role.StartsWith, "GetPermissions-", categoryId, "-", role.Id);
+            return _cacheService.CachePerRequest(cacheKey, () =>
             {
+                PermissionSet permissions;
+
                 switch (role.RoleName)
                 {
                     case AppConstants.AdminRoleName:
-                        _permissions = GetAdminPermissions(category, role);
+                        permissions = GetAdminPermissions(category, role);
                         break;
                     case AppConstants.GuestRoleName:
-                        _permissions = GetGuestPermissions(category, role);
+                        permissions = GetGuestPermissions(category, role);
                         break;
                     default:
-                        _permissions = GetOtherPermissions(category, role);
+                        permissions = GetOtherPermissions(category, role);
                         break;
                 }
 
-                HttpContext.Current.Items.Add(objectContextKey, _permissions);
-            }
+                return permissions;
 
-            return HttpContext.Current.Items[objectContextKey] as PermissionSet;
-
+            });
         }
 
         #endregion

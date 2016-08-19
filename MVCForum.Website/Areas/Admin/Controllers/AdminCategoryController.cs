@@ -83,7 +83,7 @@ namespace MVCForum.Website.Areas.Admin.Controllers
                         if (categoryViewModel.Files != null)
                         {
                             // Before we save anything, check the user already has an upload folder and if not create one
-                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.UploadFolderPath, category.Id));
+                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.Instance.UploadFolderPath, category.Id));
                             if (!Directory.Exists(uploadFolderPath))
                             {
                                 Directory.CreateDirectory(uploadFolderPath);
@@ -190,13 +190,26 @@ namespace MVCForum.Website.Areas.Admin.Controllers
                     {
 
                         var category = _categoryService.Get(categoryViewModel.Id);
+                        var parentCat = categoryViewModel.ParentCategory != null
+                                            ? _categoryService.Get((Guid)categoryViewModel.ParentCategory.Value)
+                                            : null;
 
+                        // Check they are not trying to add a subcategory of this category as the parent or it will break
+                        if (parentCat?.Path != null && categoryViewModel.ParentCategory != null)
+                        {
+                            var parentCats = parentCat.Path.Split(',').Where(x => !string.IsNullOrEmpty(x)).Select(x => new Guid(x)).ToList();
+                            if (parentCats.Contains(categoryViewModel.Id))
+                            {
+                                // Remove the parent category, but still let them create the catgory
+                                categoryViewModel.ParentCategory = null;
+                            }
+                        }
 
                         // Sort image out first
                         if (categoryViewModel.Files != null)
                         {
                             // Before we save anything, check the user already has an upload folder and if not create one
-                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.UploadFolderPath, categoryViewModel.Id));
+                            var uploadFolderPath = HostingEnvironment.MapPath(string.Concat(SiteConstants.Instance.UploadFolderPath, categoryViewModel.Id));
                             if (!Directory.Exists(uploadFolderPath))
                             {
                                 Directory.CreateDirectory(uploadFolderPath);
@@ -258,10 +271,10 @@ namespace MVCForum.Website.Areas.Admin.Controllers
                         _categoryService.UpdateSlugFromName(category);
 
                         TempData[AppConstants.MessageViewBagName] = new GenericMessageViewModel
-                                                                        {
-                                                                            Message = "Category Updated",
-                                                                            MessageType = GenericMessages.success
-                                                                        };
+                        {
+                            Message = "Category Updated",
+                            MessageType = GenericMessages.success
+                        };
 
                         categoryViewModel = CreateEditCategoryViewModel(category);
 
@@ -283,6 +296,7 @@ namespace MVCForum.Website.Areas.Admin.Controllers
 
             return View(categoryViewModel);
         }
+
 
         private void SortPath(Category category, Category parentCategory)
         {

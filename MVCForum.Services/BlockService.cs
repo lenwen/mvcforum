@@ -1,33 +1,39 @@
-﻿using System;
-using MVCForum.Domain.DomainModel.Entities;
-using MVCForum.Domain.Interfaces.Repositories;
-using MVCForum.Domain.Interfaces.Services;
-
-namespace MVCForum.Services
+﻿namespace MVCForum.Services
 {
+    using Domain.Constants;
+    using System;
+    using System.Linq;
+    using Domain.DomainModel.Entities;
+    using Domain.Interfaces;
+    using Domain.Interfaces.Services;
+    using Data.Context;
+
     public partial class BlockService : IBlockService
     {
-        private readonly IBlockRepository _blockRepository;
+        private readonly MVCForumContext _context;
+        private readonly ICacheService _cacheService;
 
-        public BlockService(IBlockRepository blockRepository)
+        public BlockService(IMVCForumContext context, ICacheService cacheService)
         {
-            _blockRepository = blockRepository;
+            _cacheService = cacheService;
+            _context = context as MVCForumContext;
         }
 
         public Block Add(Block block)
         {
             block.Date = DateTime.UtcNow;
-            return _blockRepository.Add(block);
+            return _context.Block.Add(block);
         }
 
         public void Delete(Block block)
         {
-           _blockRepository.Delete(block);
+            _context.Block.Remove(block);
         }
 
         public Block Get(Guid id)
         {
-            return _blockRepository.Get(id);
+            var cacheKey = string.Concat(CacheKeys.Block.StartsWith, "Get-", id);
+            return _cacheService.CachePerRequest(cacheKey, () => _context.Block.FirstOrDefault(x => x.Id == id));
         }
     }
 }
